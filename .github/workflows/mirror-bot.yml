@@ -1,29 +1,56 @@
-name: setting up environment
+name: MirrorBot Environment
 
-on: [push]
-    
+on:
+  push:
+    branches: [ main ]
+    paths-ignore: 'README.md'
+  workflow_dispatch:
+   
 env:
- username: Area69Lab
+  GitHubMail: ${{ secrets.GitHubMail }}
+  GitHubName: ${{ secrets.GitHubName }}
+
 jobs:
-  build:
-    runs-on: ubuntu-18.04
+  debug:
+    runs-on: ubuntu-latest
 
     steps:
-       - name: Checkout
-         uses: actions/checkout@main
+      - name: Checkout
+        uses: actions/checkout@main
 
-       - name: initialization
-         continue-on-error: true
-         run: |
-           git config --global user.name "techyminati"
-           git config --global user.email "sinha.aryan03@gmail.com"
-       - name: cloning repo
-         continue-on-error: true
-         run: |
-           ${{ secrets.COMMAND }}
-       - name: installing dependencies
-         continue-on-error: true
-         run: |
-           ls
-           cd k
-           source telebash.sh && ./telebash.sh
+      - name: Set Git Configs & Secrets
+        run: |
+          git config --global user.email ${GitHubMail}
+          git config --global user.name ${GitHubName}
+          git config --global credential.helper store
+          sudo apt-get --allow-releaseinfo-change update
+          echo "https://${GitHubName}:${{ secrets.GH_TOKEN }}@github.com" > ~/.git-credentials
+
+      - name: Clone The Secret Mirror Repository
+        run: |
+          git clone https://${GitHubName}:${{ secrets.GH_TOKEN }}@github.com/${{ secrets.MIRROR_REPOSLUG }} source
+
+      - name: Compile The Mirroring Docker Container
+        run: |
+          cd source || exit 1
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
+          docker container prune --force || true
+          docker build . --rm --force-rm --compress --no-cache=true --pull --file Dockerfile -t mirror-bot
+          docker image ls
+
+      - name: running Docker
+        timeout-minutes: 340
+        continue-on-error: true
+        run: |
+          docker run --privileged --rm -i mirror-bot
+
+      - name: Loop Workflow
+        continue-on-error: true
+        run: |
+          # ${GITHUB_REPOSITORY} is the repo slug which runs this script
+          git clone https://${{ secrets.GH_TOKEN }}@github.com/${GITHUB_REPOSITORY} loop
+          cd loop || exit 1
+          echo $(( RANDOM - ( RANDOM % RANDOM ) )) > looper.txt
+          git add looper.txt
+          git commit -m "Workflow : Loop at $(date -u +%D-%T%P)"
+          git push -q https://${{ secrets.GH_TOKEN }}@github.com/${GITHUB_REPOSITORY} HEAD:main
